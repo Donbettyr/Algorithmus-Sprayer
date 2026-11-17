@@ -1,0 +1,515 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="referrer" content="strict-origin-when-cross-origin">
+<title>Algorithmus-Sprayer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Rubik+Spray+Paint&display=swap">
+<style>
+/* Layout: ein 16:9-Bühnenfenster mit Steuerleiste darunter, Einstellungen klappen unten auf. */
+:root{
+  --bg:#EEF0F3; --surface:#FFFFFF; --ink:#14171C; --muted:#586170; --line:#D3D8DF;
+  --accent:#E4007C; --accent-ink:#FFFFFF; --cyan:#0089B3; --yellow:#C99A00;
+  --screen:#0B0D10; --screen-ink:#E6E9EE; --screen-muted:#A8B0BC;
+  --display:'Rubik Spray Paint', Impact, 'Arial Black', sans-serif;
+  --body:ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --mono:ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --bg:#0E1115; --surface:#171B21; --ink:#ECEFF3; --muted:#9AA3AF; --line:#2A3038;
+    --accent:#FF3D9A; --accent-ink:#0E1115; --cyan:#27C4F2; --yellow:#FFD23F;
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0E1115; --surface:#171B21; --ink:#ECEFF3; --muted:#9AA3AF; --line:#2A3038;
+  --accent:#FF3D9A; --accent-ink:#0E1115; --cyan:#27C4F2; --yellow:#FFD23F;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 var(--body)}
+.wrap{max-width:980px;margin:0 auto;display:grid;gap:16px;
+  padding-block:clamp(16px,4vw,40px);
+  padding-left:max(16px,env(safe-area-inset-left,0px));
+  padding-right:max(16px,env(safe-area-inset-right,0px))}
+.top{display:flex;align-items:baseline;justify-content:space-between;gap:8px 16px;flex-wrap:wrap}
+h1{margin:0;font:400 clamp(26px,5vw,38px)/1.1 var(--display);color:var(--accent);text-wrap:balance}
+.count{margin:0;font:600 14px var(--body);color:var(--muted);font-variant-numeric:tabular-nums}
+.count b{color:var(--ink)}
+
+.stage{position:relative;aspect-ratio:16/9;min-height:200px;max-width:100%;background:var(--screen);
+  border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.stage.has-error{min-height:340px}
+.stage iframe{position:absolute;inset:0;width:100%;height:100%;border:0}
+.ph{position:absolute;inset:0;display:grid;place-content:center;gap:10px;padding:24px;text-align:center}
+.ph strong{font:400 clamp(22px,4vw,34px)/1.15 var(--display);color:var(--screen-ink)}
+.ph span{max-width:46ch;margin-inline:auto;color:var(--screen-muted);font-size:15px}
+/* Fehler werden im Player sichtbar erklaert; ein externer YouTube-Link bleibt verfuegbar. */
+.player-error{position:absolute;inset:0;z-index:2;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:10px;padding:14px;text-align:center;overflow-y:auto;justify-content:safe center;background:rgba(11,13,16,.96);color:var(--screen-ink)}
+.player-error strong{font:700 clamp(16px,3vw,21px)/1.25 var(--body)}
+.player-error span{font-size:14px;max-width:55ch;color:var(--screen-muted)}
+.player-error a{display:inline-block;padding:10px 16px;border-radius:8px;background:var(--accent);
+  color:var(--accent-ink);font-weight:700;text-decoration:none}
+.player-error a:focus-visible{outline:3px solid var(--cyan);outline-offset:2px}
+.splats{position:absolute;inset:0;pointer-events:none;overflow:hidden}
+.splats i{position:absolute;border-radius:50%;transform:translate(-50%,-50%) scale(0);opacity:.85;
+  animation:splat .7s cubic-bezier(.2,.8,.2,1) forwards}
+@keyframes splat{60%{opacity:.7}to{transform:translate(-50%,-50%) scale(1);opacity:0}}
+@media (prefers-reduced-motion:reduce){.splats{display:none}}
+
+.timer{height:4px;margin-top:-8px;background:var(--line);border-radius:2px;overflow:hidden}
+.timer span{display:block;height:100%;width:0;background:var(--accent);transition:width .25s linear}
+
+.controls{display:flex;flex-wrap:wrap;align-items:center;gap:12px}
+.btn{appearance:none;font:600 16px var(--body);min-height:48px;padding:0 20px;border-radius:10px;
+  border:1px solid var(--line);background:var(--surface);color:var(--ink);cursor:pointer}
+.btn:hover:not(:disabled){border-color:var(--muted)}
+.btn:disabled{opacity:.45;cursor:default}
+.btn.primary{flex:1 1 180px;max-width:320px;background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.btn.primary:hover{filter:brightness(1.07)}
+.btn:focus-visible,summary:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{
+  outline:3px solid var(--cyan);outline-offset:2px}
+.link{color:var(--ink);font-weight:600;text-underline-offset:3px}
+.status{margin:0;min-height:1.5em;color:var(--muted);font-size:14px;overflow-wrap:anywhere}
+.note,.notice{margin:0;padding:12px 14px;border:1px solid var(--yellow);border-radius:10px;background:var(--surface);font-size:14px}
+.notice code{font:13px var(--mono);overflow-wrap:anywhere}
+
+.settings{border:1px solid var(--line);border-radius:10px;background:var(--surface)}
+.settings summary{cursor:pointer;padding:14px 16px;font-weight:600}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:20px 28px;padding:4px 16px 18px}
+.f{display:grid;gap:8px;align-content:start;min-width:0;margin:0;padding:0;border:0}
+.f>label:not(.chk),.f>legend{padding:0;font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+.chk{display:flex;align-items:center;gap:10px;min-height:32px}
+.chk input{width:18px;height:18px;margin:0;accent-color:var(--accent)}
+.chk small,.f small{color:var(--muted);font-size:12px}
+input[type=password],select,textarea{width:100%;min-width:0;font:15px var(--body);color:var(--ink);
+  background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px 12px}
+textarea{resize:vertical;font:13px var(--mono)}
+.row{display:flex;gap:8px;flex-wrap:wrap}
+.row .btn{min-height:40px;font-size:14px;padding:0 14px}
+.foot{margin:0;color:var(--muted);font-size:13px}
+kbd{font:12px var(--mono);padding:1px 6px;border:1px solid var(--line);border-radius:5px;background:var(--surface)}
+.help{font-size:14px;color:var(--muted)}
+.help summary{padding:4px 0;font-weight:600;color:var(--ink);cursor:pointer}
+.help ol{margin:8px 0 0;padding-left:20px;display:grid;gap:6px}
+.help a{color:var(--ink);overflow-wrap:anywhere}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <h1>Algorithmus-Sprayer</h1>
+    <p class="count" aria-live="polite"><b id="n">0</b> Videos gesprüht</p>
+  </header>
+
+  <p id="notice" class="notice" hidden><span id="notice-text"></span></p>
+
+  <div class="stage">
+    <iframe id="yt" title="YouTube-Player" referrerpolicy="strict-origin-when-cross-origin" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen hidden></iframe>
+    <div id="ph" class="ph"><strong>Bereit zum Sprühen</strong><span>Jeder Klick lädt ein zufälliges Video. Ein Algorithmus sucht dafür selbst nach Themen, du brauchst keine Liste.</span></div>
+    <div id="player-error" class="player-error" role="alert" hidden>
+      <strong id="player-error-title">Player nicht verfügbar</strong>
+      <span id="player-error-text"></span>
+      <a id="youtube-link" target="_blank" rel="noopener" hidden>Dieses Video auf YouTube öffnen</a>
+    </div>
+    <div id="splats" class="splats" aria-hidden="true"></div>
+  </div>
+  <div id="timer" class="timer" hidden><span id="tbar"></span></div>
+
+  <div class="controls">
+    <button id="prev" class="btn" type="button" disabled>← Zurück</button>
+    <button id="next" class="btn primary" type="button">Los geht's</button>
+  </div>
+  <p id="status" class="status" role="status"></p>
+  <p id="note" class="note" role="alert" hidden></p>
+
+  <details class="settings">
+    <summary>Einstellungen</summary>
+    <div class="grid">
+      <div class="f">
+        <label for="via">Suche</label>
+        <select id="via">
+          <option value="auto">Automatisch</option>
+          <option value="api">Nur mit YouTube-API-Key</option>
+          <option value="free">Nur ohne Key (experimentell)</option>
+        </select>
+        <label for="lang">Themen und Sprache</label>
+        <select id="lang">
+          <option value="all">Alle Sprachen</option>
+          <option value="de">Deutsch</option>
+          <option value="en">Englisch</option>
+        </select>
+        <label class="chk"><input type="checkbox" id="nomusic"> Musik ausschließen <small>nur mit Key</small></label>
+      </div>
+
+      <div class="f">
+        <label for="auto">Auto-Weiter</label>
+        <select id="auto">
+          <option value="off">Aus</option>
+          <option value="end">Wenn das Video endet</option>
+          <option value="15">Nach 15 Sekunden</option>
+          <option value="30">Nach 30 Sekunden</option>
+          <option value="60">Nach 60 Sekunden</option>
+        </select>
+        <label class="chk"><input type="checkbox" id="mute"> Stumm starten</label>
+      </div>
+
+      <div class="f">
+        <label for="key">YouTube Data API v3 Key</label>
+        <input id="key" type="password" autocomplete="off" placeholder="AIza…">
+        <small>Der Key bleibt in diesem Browser. Eine Suche kostet 101 von 10.000 Tageseinheiten (100 Suche + 1 Video-Prüfung). Teile deinen Key nicht öffentlich.</small>
+        <button id="test-player" class="btn" type="button">▶ YouTube-Player testen</button>
+        <small>Spielt ein offizielles Beispielvideo ab – ohne API-Key, Wikipedia oder Suchserver. Der Sprayer-Zähler bleibt unverändert.</small>
+        <details class="help">
+          <summary>So bekommst du einen Key</summary>
+          <ol>
+            <li>In der Google Cloud Console ein Projekt anlegen.</li>
+            <li>Die <a href="https://console.cloud.google.com/apis/library/youtube.googleapis.com" target="_blank" rel="noopener">YouTube Data API v3</a> aktivieren.</li>
+            <li>Unter <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener">Anmeldedaten</a> einen API-Schlüssel erstellen und hier einfügen.</li>
+            <li>Empfohlen: den Schlüssel auf die YouTube Data API v3 beschränken.</li>
+          </ol>
+        </details>
+      </div>
+    </div>
+  </details>
+
+  <p class="foot"><kbd>←</kbd> <kbd>→</kbd> wechseln das Video. Nicht einbettbare Einzelvideos werden übersprungen. Bei einem Identitätsfehler (153) zeigt der Player einen Hinweis, statt endlos weiterzuspringen.</p>
+</div>
+<script>(() => {
+'use strict';
+const $ = s => document.querySelector(s);
+const YT = 'https://www.youtube.com';
+const VALID = /^[\w-]{11}$/;
+const TEST_VIDEO_ID = 'M7lc1UVf-VE'; // YouTube-IFrame-API-Beispielvideo
+const CAN_EMBED = /^https?:$/.test(location.protocol);
+/* Wikipedia-Ausgaben, aus denen die Zufallsthemen kommen (nur Sprachcodes, keine Videos). */
+const WIKI = { all: 'de en fr es it pt nl sv pl tr ru ja ko id cs fi da hu el'.split(' '), de: ['de'], en: ['en'] };
+
+/* ---------- Einstellungen (localStorage, darf fehlschlagen) ---------- */
+const store = {
+  get(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* ignorieren */ } }
+};
+const DEF = { auto: 'off', mute: false, via: 'auto', lang: 'all', nomusic: true, key: '', n: 0 };
+const saved = store.get('sprayer', {}) || {};
+const S = {};
+for (const k in DEF) S[k] = typeof saved[k] === typeof DEF[k] ? saved[k] : DEF[k];
+if (!['auto', 'api', 'free'].includes(S.via)) S.via = 'auto';
+if (!WIKI[S.lang]) S.lang = 'all';
+const save = () => store.set('sprayer', S);
+
+/* ---------- Hilfen ---------- */
+const rnd = n => Math.floor(Math.random() * n);
+const pick = a => a[rnd(a.length)];
+const shuffle = a => { for (let i = a.length - 1; i > 0; i--) { const j = rnd(i + 1); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+const status = t => { $('#status').textContent = t; };
+let noteH = 0;
+const note = t => {
+  const n = $('#note'); n.textContent = t; n.hidden = !t;
+  clearTimeout(noteH); if (t) noteH = setTimeout(() => { n.hidden = true; }, 12000);
+};
+const showNotice = t => { $('#notice-text').textContent = t; $('#notice').hidden = !t; };
+function clearPlayerError() { $('#player-error').hidden = true; $('#youtube-link').hidden = true; $('.stage').classList.remove('has-error'); }
+function showPlayerError(title, message) {
+  $('#player-error-title').textContent = title;
+  $('#player-error-text').textContent = message;
+  const link = $('#youtube-link');
+  if (currentVideoId && VALID.test(currentVideoId)) {
+    link.href = `https://www.youtube.com/watch?v=${currentVideoId}`;
+    link.hidden = false;
+  } else link.hidden = true;
+  $('#player-error').hidden = false;
+  $('.stage').classList.add('has-error');
+}
+async function getJson(url, ms = 8000) {
+  const c = new AbortController(), h = setTimeout(() => c.abort(), ms);
+  try {
+    const r = await fetch(url, { signal: c.signal });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    return await r.json();
+  } finally { clearTimeout(h); }
+}
+
+/* ---------- Zustand ---------- */
+const bad = new Set(), seen = new Set(), info = {}, topics = [], buf = [];
+let hist = [], pos = -1, loading = false, busy = null, apiDown = false, blocked = false, instances = null;
+let ended = false, state = -1, errRun = 0, errSeen = false, gotMsg = false, timerT = 0, tickH = 0;
+let currentVideoId = null, testingPlayer = false;
+
+/* ---------- Themen: zufällige Wikipedia-Artikel ---------- */
+async function wikiTitles() {
+  const lang = pick(WIKI[S.lang]);
+  const j = await getJson(`https://${lang}.wikipedia.org/w/api.php?action=query&list=random&rnnamespace=0&rnlimit=30&format=json&origin=*`);
+  return j.query.random.map(r => r.title)
+    .filter(t => !/^(Liste|List|Lista)\b/i.test(t) && !/\((Begriffsklärung|disambiguation)\)/i.test(t))
+    .map(t => ({ q: t.replace(/\s*\([^)]*\)\s*$/, ''), lang }));
+}
+async function nextTopic() {
+  if (!topics.length) topics.push(...await wikiTitles());
+  return topics.pop();
+}
+
+/* ---------- Suche: offizielle API (mit Key) ---------- */
+const REASON = {
+  keyInvalid: 'Der API-Key ist ungültig.',
+  quotaExceeded: 'Das Tageskontingent der API ist aufgebraucht.',
+  dailyLimitExceeded: 'Das Tageskontingent der API ist aufgebraucht.',
+  accessNotConfigured: 'Die YouTube Data API v3 ist für diesen Key nicht aktiviert.',
+  ipRefererBlocked: 'Der Key erlaubt diese Webadresse nicht.'
+};
+function apiErr(j, st) {
+  const e = j && j.error, r = e && e.errors && e.errors[0] && e.errors[0].reason;
+  return Object.assign(new Error(REASON[r] || (e && e.message) || `Fehler ${st}`), { api: true });
+}
+async function searchApi(t) {
+  const q = new URLSearchParams({ part: 'snippet', type: 'video', videoEmbeddable: 'true', videoSyndicated: 'true',
+    maxResults: '25', q: t.q, relevanceLanguage: t.lang, key: S.key });
+  const sr = await fetch(`https://www.googleapis.com/youtube/v3/search?${q}`), sj = await sr.json();
+  if (!sr.ok) throw apiErr(sj, sr.status);
+  const ids = (sj.items || []).map(i => i.id && i.id.videoId).filter(id => VALID.test(id || ''));
+  if (!ids.length) return [];
+  /* Zweiter Aufruf (1 Einheit): Kategorie und Einbettbarkeit prüfen. */
+  const vr = await fetch(`https://www.googleapis.com/youtube/v3/videos?${new URLSearchParams({ part: 'snippet,status', id: ids.join(','), key: S.key })}`);
+  const vj = await vr.json();
+  if (!vr.ok) throw apiErr(vj, vr.status);
+  return (vj.items || [])
+    .filter(v => v.status && v.status.embeddable && v.status.privacyStatus === 'public'
+      && v.snippet.liveBroadcastContent === 'none' && !(S.nomusic && v.snippet.categoryId === '10'))
+    .map(v => ({ id: v.id, title: v.snippet.title, topic: t.q }));
+}
+
+/* ---------- Suche: öffentliche Invidious-Server (ohne Key, experimentell) ---------- */
+async function searchFree(t) {
+  if (!instances) {
+    const j = await getJson('https://api.invidious.io/instances.json?sort_type=health');
+    instances = j.filter(([, i]) => i && i.api === true && i.cors === true && i.type === 'https' && i.uri)
+      .map(([, i]) => i.uri.replace(/\/$/, ''));
+  }
+  for (const base of shuffle([...instances]).slice(0, 5)) {
+    try {
+      const j = await getJson(`${base}/api/v1/search?q=${encodeURIComponent(t.q)}&type=video&sort_by=relevance`);
+      const out = (Array.isArray(j) ? j : [])
+        .filter(v => v.type === 'video' && VALID.test(v.videoId || '') && v.lengthSeconds > 0)
+        .map(v => ({ id: v.videoId, title: v.title, topic: t.q }));
+      if (out.length) return out;
+    } catch { /* nächster Server */ }
+  }
+  return [];
+}
+
+/* ---------- Puffer füllen und ziehen ---------- */
+function refill() {
+  if (busy) return busy;
+  busy = (async () => {
+    let got = 0, last = null;
+    for (let i = 0; i < 8 && got < 6; i++) {
+      try {
+        const t = await nextTopic();
+        const viaApi = S.via === 'api' || (S.via === 'auto' && !!S.key && !apiDown);
+        if (viaApi && !S.key) throw Object.assign(new Error('Kein API-Key eingetragen.'), { fatal: true });
+        const items = shuffle((viaApi ? await searchApi(t) : await searchFree(t))
+          .filter(v => !seen.has(v.id) && !bad.has(v.id) && !buf.includes(v.id))).slice(0, 6);
+        items.forEach(v => { info[v.id] = v; buf.push(v.id); });
+        got += items.length;
+      } catch (e) {
+        last = e;
+        if (e.api && S.via === 'auto') { apiDown = true; last = null; note(`${e.message} Die Suche läuft jetzt ohne Key weiter.`); continue; }
+        if (e.api || e.fatal) break;
+      }
+    }
+    if (!got) {
+      note(last ? `Suche fehlgeschlagen: ${last.message}`
+        : S.key ? 'Zu diesen Themen gab es keine passenden Videos.'
+        : 'Ohne Key hängt die Suche von öffentlichen Servern ab, und die sind oft nicht erreichbar. Mit einem API-Key läuft sie zuverlässig.');
+    }
+  })().finally(() => { busy = null; });
+  return busy;
+}
+
+async function draw() {
+  if (!buf.length) await refill();
+  let id = null;
+  while (buf.length && !id) { const c = buf.pop(); if (!seen.has(c) && !bad.has(c)) id = c; }
+  if (buf.length < 6) refill();
+  return id;
+}
+
+/* ---------- Player ---------- */
+const f = $('#yt');
+
+function embed(id) {
+  if (!CAN_EMBED) {
+    blocked = true;
+    f.hidden = true;
+    showPlayerError('Lokale Datei: kein YouTube-Embed',
+      'Diese HTML wird über file:// oder eine eingeschränkte Vorschau geöffnet. Öffne sie über eine echte HTTP(S)-Webadresse, idealerweise GitHub Pages.');
+    return;
+  }
+  // Der echte HTTP-Referer stammt aus der geladenen Webseite; origin= ersetzt ihn nicht.
+  const o = `&origin=${encodeURIComponent(location.origin)}`;
+  f.referrerPolicy = 'strict-origin-when-cross-origin';
+  f.src = `${YT}/embed/${id}?autoplay=1&rel=0&playsinline=1&enablejsapi=1&mute=${S.mute ? 1 : 0}${o}`;
+}
+
+function play(id, test = false) {
+  currentVideoId = id;
+  testingPlayer = test;
+  blocked = false; ended = false; state = -1; gotMsg = false; errSeen = false;
+  clearPlayerError();
+  const v = info[id];
+  status(test ? 'Player-Test: offizielles YouTube-Beispielvideo (keine Suche/API nötig)' :
+    (v ? `Thema: ${v.topic} · ${v.title}` : ''));
+  $('#prev').disabled = test || pos < 1;
+  $('#next').textContent = 'Weiter →';
+  $('#ph').hidden = true; f.hidden = false;
+  embed(id);
+  startTimer();
+}
+
+async function next() {
+  if (loading) return;
+  loading = true;
+  try {
+    splat();
+    if (pos < hist.length - 1) pos++;
+    else {
+      status('Suche nach einem neuen Thema …');
+      const id = await draw();
+      if (!id) { status('Keine Videos gefunden. Prüfe Verbindung und Einstellungen.'); return; }
+      seen.add(id); hist.push(id); pos = hist.length - 1;
+      S.n++; save(); $('#n').textContent = S.n;
+    }
+    play(hist[pos]);
+  } finally { loading = false; }
+}
+
+function prev() { if (pos > 0) { pos--; play(hist[pos]); } }
+
+function startTimer() {
+  clearInterval(tickH); timerT = 0;
+  const sec = testingPlayer ? 0 : (+S.auto || 0);
+  $('#timer').hidden = !sec || blocked;
+  $('#tbar').style.width = '0%';
+  if (!sec || blocked) return;
+  tickH = setInterval(() => {
+    if (state === 2) return;
+    timerT += .25;
+    $('#tbar').style.width = `${Math.min(100, timerT / sec * 100)}%`;
+    if (timerT >= sec) { clearInterval(tickH); next(); }
+  }, 250);
+}
+
+function onState(s) {
+  if (s === state) return;
+  state = s;
+  if (s === 1) { errRun = 0; blocked = false; clearPlayerError(); }
+  if (s === 0 && !ended) { ended = true; if (!testingPlayer && S.auto === 'end') next(); }
+}
+
+function onErr(code) {
+  if (errSeen) return;
+  errSeen = true;
+  blocked = true;
+  clearInterval(tickH); $('#timer').hidden = true;
+  if (code === 153) {
+    const msg = CAN_EMBED
+      ? 'YouTube kann die Herkunft der Seite nicht erkennen. Öffne die veröffentlichte HTTPS-Adresse direkt in Chrome oder Firefox, nicht in einer Datei- oder App-Vorschau.'
+      : 'Diese Datei ist nicht per HTTP(S) geöffnet. Nutze eine veröffentlichte HTTPS-Adresse, zum Beispiel GitHub Pages.';
+    status('YouTube-Fehler 153: Einbettung wegen fehlender Herkunftskennung abgelehnt.');
+    showPlayerError('YouTube-Fehler 153', msg);
+    return;
+  }
+  if (testingPlayer) {
+    status(`Player-Test fehlgeschlagen (YouTube-Fehler ${code}).`);
+    showPlayerError(`Player-Test: Fehler ${code}`,
+      'Das Beispielvideo konnte in dieser Umgebung nicht eingebettet werden. Öffne es testweise direkt auf YouTube.');
+    return;
+  }
+  const id = currentVideoId;
+  if (id) bad.add(id);
+  errRun++;
+  if (errRun >= 4) {
+    status('Mehrere Videos hintereinander nicht abspielbar. Prüfe Verbindung und Einstellungen.');
+    showPlayerError('Wiedergabe fehlgeschlagen', `YouTube meldet Fehler ${code}. Bitte überprüfe die Einbettung.`);
+    return;
+  }
+  status(`YouTube-Fehler ${code}: Video nicht abspielbar, nächstes folgt …`);
+  // Manche Einzelvideos dürfen nicht eingebettet werden. Nur in diesem Fall weiterspringen.
+  setTimeout(() => { if (currentVideoId === id && !testingPlayer) next(); }, 600);
+}
+
+f.addEventListener('load', () => {
+  if (!f.src.startsWith(`${YT}/`)) return;
+  let tries = 0;
+  const hello = () => {
+    if (gotMsg || tries++ > 12) return;
+    const send = m => f.contentWindow.postMessage(JSON.stringify(m), YT);
+    send({ event: 'listening', id: 1, channel: 'widget' });
+    ['onStateChange', 'onError'].forEach(e => send({ event: 'command', func: 'addEventListener', args: [e], id: 1, channel: 'widget' }));
+    setTimeout(hello, 500);
+  };
+  hello();
+});
+
+addEventListener('message', e => {
+  if (e.origin !== YT || e.source !== f.contentWindow) return;
+  let d = e.data;
+  if (typeof d === 'string') { try { d = JSON.parse(d); } catch { return; } }
+  if (!d || !d.event) return;
+  const s = d.event === 'onStateChange' ? d.info : (d.event === 'infoDelivery' && d.info ? d.info.playerState : undefined);
+  // Nicht bereits beim ersten unverbindlichen 'ready' die Registrierungsversuche abbrechen.
+  if (typeof s === 'number') { gotMsg = true; onState(s); }
+  if (d.event === 'onError') { gotMsg = true; onErr(d.info); }
+});
+
+/* ---------- Farbspritzer ---------- */
+function splat() {
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const box = $('#splats'), cols = ['var(--accent)', 'var(--cyan)', 'var(--yellow)'];
+  for (let i = 0; i < 5; i++) {
+    const d = document.createElement('i'), s = 80 + rnd(160);
+    d.style.cssText = `left:${rnd(100)}%;top:${rnd(100)}%;width:${s}px;height:${s}px;background:${pick(cols)};animation-delay:${i * 40}ms`;
+    d.addEventListener('animationend', () => d.remove());
+    box.append(d);
+  }
+}
+
+/* ---------- Einstellungen anzeigen und binden ---------- */
+function sync() {
+  $('#via').value = S.via; $('#lang').value = S.lang; $('#nomusic').checked = S.nomusic;
+  $('#auto').value = S.auto; $('#mute').checked = S.mute; $('#key').value = S.key;
+  $('#n').textContent = S.n;
+}
+const reset = () => { apiDown = false; buf.length = 0; };
+
+$('#next').onclick = next;
+$('#prev').onclick = prev;
+$('#test-player').onclick = () => {
+  clearInterval(tickH);
+  play(TEST_VIDEO_ID, true);
+};
+$('#via').onchange = e => { S.via = e.target.value; reset(); save(); };
+$('#lang').onchange = e => { S.lang = e.target.value; topics.length = 0; reset(); save(); };
+$('#nomusic').onchange = e => { S.nomusic = e.target.checked; reset(); save(); };
+$('#key').onchange = e => { S.key = e.target.value.trim(); reset(); save(); };
+$('#auto').onchange = e => { S.auto = e.target.value; save(); if (!f.hidden) startTimer(); };
+$('#mute').onchange = e => { S.mute = e.target.checked; save(); };
+addEventListener('keydown', e => {
+  if (e.altKey || e.ctrlKey || e.metaKey || e.target.closest('input,textarea,select')) return;
+  if (e.key === 'ArrowRight') next();
+  if (e.key === 'ArrowLeft') prev();
+});
+
+sync();
+if (!CAN_EMBED) showNotice('Lokale Datei erkannt: YouTube benötigt eine echte HTTP(S)-Webadresse mit gültigem Referer. Für den Test lade die HTML als index.html bei GitHub Pages hoch und öffne die veröffentlichte Adresse direkt im Browser.');
+})();
+</script>
+</body>
+</html>
